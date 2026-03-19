@@ -15,23 +15,26 @@ st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun.")
 
-# --- HAFIZA (STATE) YÖNETİMİ ---
+# --- HAFIZA (STATE) YÖNETİMİ (Sorun 1 ve 2'nin Çözümü) ---
 if "current_lat" not in st.session_state:
     st.session_state.current_lat = None
     st.session_state.current_lon = None
+if "last_map_click" not in st.session_state:
+    st.session_state.last_map_click = None
+if "last_gps_data" not in st.session_state:
+    st.session_state.last_gps_data = None
 
-# Üst Kontrol Paneli (GPS)
-st.write("**Mevcut konumunuzu kullanın:**")
+# GPS Butonu Paneli
+st.write("**Mevcut konumunuzu kullanmak için butona tıklayın:**")
 location_data = streamlit_geolocation()
 
-# GPS Tıklaması Yakalama
+# GPS Tıklamasını Yakalama (Sadece yeni bir GPS verisi gelirse çalışır)
 if location_data and location_data.get('latitude') is not None:
-    lat = location_data['latitude']
-    lon = location_data['longitude']
-    if st.session_state.current_lat != lat or st.session_state.current_lon != lon:
-        st.session_state.current_lat = lat
-        st.session_state.current_lon = lon
-        st.rerun() # Konum değiştiyse sayfayı yenile
+    if st.session_state.last_gps_data != location_data:
+        st.session_state.last_gps_data = location_data
+        st.session_state.current_lat = location_data['latitude']
+        st.session_state.current_lon = location_data['longitude']
+        st.rerun() # Yeni GPS geldi, sayfayı yenile
 
 @st.cache_data
 def load_data():
@@ -104,37 +107,40 @@ Risk Seviyesi: {risk_level}
                 st.download_button("📄 Raporu İndir", data=rapor_icerik, file_name="Risk_Raporu.txt", mime="text/plain")
 
             # Deprem Verisi
-            with st.spinner('USGS veritabanı taranıyor...'):
-                historical_quakes = get_historical_quakes(lat, lon)
+            historical_quakes = get_historical_quakes(lat, lon)
             
-            if historical_quakes:
-                st.info(f"📍 50 km çapında, 5.0 ve üzeri **{len(historical_quakes)}** deprem bulundu. (Haritada mor daireler)")
+            # Halkalar ve Bilgi Notu (Sorun 3'ün Çözümü)
+            st.info("ℹ️ **Harita Bilgisi:** Haritada gördüğünüz renkli alanlar risk çemberleridir. **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir.")
 
             # Haritayı tıklanan yere odakla
             start_loc = [lat, lon]
             start_zoom = 11
         else:
-            # Başlangıç odak noktası (Erzincan Merkezli)
+            # Uygulama ilk açıldığında GPS'e gitmez, buradaki koordinatta (Erzincan) bekler.
             start_loc = [39.75, 39.50]
             start_zoom = 8
+            historical_quakes = []
+            line_coords = []
 
         # --- TEK HARİTA OLUŞTURUMU ---
         m = folium.Map(location=start_loc, zoom_start=start_zoom)
         
-        # Faylar her zaman görünür
+        # Faylar her zaman görünür (Tıklanabilir olmalarına gerek yok)
         folium.GeoJson(
             faults_display, 
-            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.6}
+            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.6},
+            interactive=False
         ).add_to(m)
 
         # Eğer koordinat seçilmişse ekstra katmanları ekle
         if st.session_state.current_lat and st.session_state.current_lon:
-            # Tehlike Çemberleri
-            folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1).add_to(m)
-            folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1).add_to(m)
-            folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1).add_to(m)
             
-            # Depremler
+            # Tehlike Çemberleri (interactive=False sayesinde tıklamayı engellemez)
+            folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1, interactive=False).add_to(m)
+            folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1, interactive=False).add_to(m)
+            folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1, interactive=False).add_to(m)
+            
+            # Depremler (Mor Halkalar)
             if historical_quakes:
                 for q in historical_quakes:
                     coords = q['geometry']['coordinates']
@@ -142,24 +148,28 @@ Risk Seviyesi: {risk_level}
                     yil = datetime.datetime.fromtimestamp(q['properties']['time'] / 1000.0).year if q['properties']['time'] else ""
                     folium.CircleMarker(
                         location=[coords[1], coords[0]], radius=float(mag) * 2.5,
-                        color="purple", fill=True, tooltip=f"Yıl: {yil} | {mag} Mw"
+                        color="purple", fill=True, tooltip=f"Yıl: {yil} | {mag} Mw",
+                        interactive=True # Depremlerin üzerine gelince bilgi çıksın
                     ).add_to(m)
 
             # Merkez Nokta ve Çizgi
-            folium.Marker(start_loc, tooltip="Sorgulanan Konum", icon=folium.Icon(color='red')).add_to(m)
-            folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5').add_to(m)
+            folium.Marker(start_loc, tooltip="Seçili Konum").add_to(m)
+            folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5', interactive=False).add_to(m)
 
-        # Haritayı Ekrana Bas (TEK SEFER)
+        # Haritayı Ekrana Bas
         map_output = st_folium(m, width="100%", height=650, key="main_map")
 
-        # Haritaya Tıklama Yakalama (En altta olmalı)
+        # Haritaya Tıklamayı Yakala
         if map_output and map_output.get("last_clicked"):
-            lat = map_output["last_clicked"]["lat"]
-            lon = map_output["last_clicked"]["lng"]
-            # Eğer yeni tıklanan yer hafızadakinden farklıysa hafızayı güncelle ve REFRESH at
-            if st.session_state.current_lat != lat or st.session_state.current_lon != lon:
-                st.session_state.current_lat = lat
-                st.session_state.current_lon = lon
+            click_lat = map_output["last_clicked"]["lat"]
+            click_lon = map_output["last_clicked"]["lng"]
+            click_tuple = (click_lat, click_lon)
+            
+            # Eğer yeni tıklanan yer eskisinden farklıysa hafızayı güncelle ve REFRESH at
+            if st.session_state.last_map_click != click_tuple:
+                st.session_state.last_map_click = click_tuple
+                st.session_state.current_lat = click_lat
+                st.session_state.current_lon = click_lon
                 st.rerun()
 
     else:
