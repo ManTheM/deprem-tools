@@ -51,7 +51,7 @@ try:
         m = folium.Map(location=[39.75, 39.50], zoom_start=8)
         folium.GeoJson(
             faults_display,
-            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.5}
+            style_function=lambda x: {'color': 'black', 'weight': 2.0, 'opacity': 0.5}
         ).add_to(m)
 
         map_output = st_folium(m, width="100%", height=500, key="initial_map")
