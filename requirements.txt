@@ -5,3 +5,4 @@ streamlit-folium
 shapely
 requests
 streamlit-geolocation
+geopy

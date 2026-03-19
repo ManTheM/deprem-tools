@@ -8,9 +8,34 @@ import os
 import requests
 import datetime
 from streamlit_geolocation import streamlit_geolocation
+from geopy.geocoders import Nominatim
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
+
+# --- ÖZEL CSS (Görsel İyileştirme) ---
+st.markdown("""
+    <style>
+    [data-testid="stMetricValue"] {
+        height: auto !important;
+        min-height: 50px !important;
+    }
+    div[data-testid="stMetricValue"] > div {
+        font-size: 1.1rem !important; 
+        white-space: normal !important; 
+        line-height: 1.3 !important;
+        overflow-wrap: break-word !important; 
+        font-weight: 500 !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.9rem !important;
+        margin-bottom: 3px !important;
+    }
+    .leaflet-interactive {
+        outline: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun.")
@@ -23,12 +48,13 @@ if "last_map_click" not in st.session_state:
     st.session_state.last_map_click = None
 if "last_gps_data" not in st.session_state:
     st.session_state.last_gps_data = None
+if "current_address" not in st.session_state:
+    st.session_state.current_address = "Adres aranıyor..."
 
 # GPS Butonu Paneli
 st.write("**Mevcut konumunuzu kullanmak için butona tıklayın:**")
 location_data = streamlit_geolocation()
 
-# GPS Tıklamasını Yakalama
 if location_data and location_data.get('latitude') is not None:
     if st.session_state.last_gps_data != location_data:
         st.session_state.last_gps_data = location_data
@@ -55,13 +81,21 @@ def get_historical_quakes(lat, lon):
         pass
     return []
 
-# Sadeleştirilmiş Çeviri Fonksiyonu (Örnekler çıkarıldı)
+# Adres Bulma Fonksiyonu (Reverse Geocoding)
+def get_address(lat, lon):
+    try:
+        geolocator = Nominatim(user_agent="afet_kultur_uygulamasi")
+        location = geolocator.reverse(f"{lat}, {lon}", exactly_one=True, timeout=5)
+        if location:
+            return location.address
+    except:
+        pass
+    return "Adres detayları sunucudan alınamadı."
+
 def translate_slip_type(raw_type):
     if not isinstance(raw_type, str):
         return "Bilinmiyor"
-    
     raw_lower = raw_type.lower()
-    
     if "dextral" in raw_lower or "right-lateral" in raw_lower or "right lateral" in raw_lower:
         return "Sağ Yönlü Doğrultu Atımlı Fay"
     elif "sinistral" in raw_lower or "left-lateral" in raw_lower or "left lateral" in raw_lower:
@@ -82,28 +116,38 @@ try:
 
     if faults_display is not None:
         
-        # --- HESAPLAMALAR VE SONUÇ PANELİ ---
         if st.session_state.current_lat and st.session_state.current_lon:
             lat = st.session_state.current_lat
             lon = st.session_state.current_lon
             
-            p_geom = Point(lon, lat)
-            p_utm_series = gpd.GeoSeries([p_geom], crs="EPSG:4326").to_crs(epsg=5259)
-            p_utm = p_utm_series.iloc[0] 
+            # Etkileşimli Yükleme Çubuğu (Spinner)
+            with st.spinner("Hedef konum analiz ediliyor, lütfen bekleyin..."):
+                
+                # Adres Çekme İşlemi
+                # (Sadece yeni bir konuma tıklandığında adresi baştan çekeriz, performansı artırır)
+                if st.session_state.current_address == "Adres aranıyor..." or "current_address_coords" not in st.session_state or st.session_state.current_address_coords != (lat, lon):
+                    st.session_state.current_address = get_address(lat, lon)
+                    st.session_state.current_address_coords = (lat, lon)
 
-            distances = faults_utm.distance(p_utm)
-            nearest_idx = distances.idxmin()
-            distance_km = distances.min() / 1000
+                p_geom = Point(lon, lat)
+                p_utm_series = gpd.GeoSeries([p_geom], crs="EPSG:4326").to_crs(epsg=5259)
+                p_utm = p_utm_series.iloc[0] 
 
-            nearest_fault_geom = faults_utm.geometry.iloc[nearest_idx]
-            pts = nearest_points(p_utm, nearest_fault_geom) 
-            
-            line_geom = LineString([pts[0], pts[1]])
-            line_gdf = gpd.GeoSeries([line_geom], crs="EPSG:5259").to_crs(epsg=4326)
-            line_coords = [(p[1], p[0]) for p in line_gdf.iloc[0].coords]
+                distances = faults_utm.distance(p_utm)
+                nearest_idx = distances.idxmin()
+                distance_km = distances.min() / 1000
 
-            raw_slip = faults_display.iloc[nearest_idx].get("slip_type", "Bilinmiyor")
-            fay_tipi = translate_slip_type(raw_slip)
+                nearest_fault_geom = faults_utm.geometry.iloc[nearest_idx]
+                pts = nearest_points(p_utm, nearest_fault_geom) 
+                
+                line_geom = LineString([pts[0], pts[1]])
+                line_gdf = gpd.GeoSeries([line_geom], crs="EPSG:5259").to_crs(epsg=4326)
+                line_coords = [(p[1], p[0]) for p in line_gdf.iloc[0].coords]
+
+                raw_slip = faults_display.iloc[nearest_idx].get("slip_type", "Bilinmiyor")
+                fay_tipi = translate_slip_type(raw_slip)
+                
+                historical_quakes = get_historical_quakes(lat, lon)
 
             if distance_km <= 1.0:
                 risk_level, risk_color = "Çok Yüksek", "🔴"
@@ -114,12 +158,13 @@ try:
             else:
                 risk_level, risk_color = "Düşük", "🟢"
 
-            # 1. YENİ TASARIM: Risk Derecesi Çizginin Üstünde ve Çok Büyük
             st.markdown(f"<h2 style='text-align: center; margin-top: 20px;'>{risk_color} Risk Derecesi: {risk_level}</h2>", unsafe_allow_html=True)
+            
+            # Adresi Arayüze Ekleme
+            st.markdown(f"<p style='text-align: center; color: gray; font-size: 1.1rem;'>📍 <b>Konum:</b> {st.session_state.current_address}</p>", unsafe_allow_html=True)
             
             st.divider()
             
-            # 2. YENİ TASARIM: Kesilmeyen büyük Markdown metinleri
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"#### 📏 En Yakın Faya Mesafe")
@@ -128,11 +173,15 @@ try:
                 st.markdown(f"#### ⚙️ Fay Tipi (Kinematiği)")
                 st.markdown(f"## **{fay_tipi}**")
             
-            st.write("") # Boşluk
+            st.write("") 
             
+            # Rapor İçeriğine Adres ve Koordinat Eklendi
             rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
 Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
-Sorgulanan Koordinatlar: Enlem {lat:.5f}, Boylam {lon:.5f}
+
+--- SORGULANAN KONUM ---
+Açık Adres: {st.session_state.current_address}
+Koordinatlar: Enlem {lat:.5f}, Boylam {lon:.5f}
 
 --- ANALIZ SONUCLARI ---
 En Yakin Faya Mesafe : {distance_km:.2f} km
@@ -144,7 +193,6 @@ Risk Seviyesi        : {risk_level}
             st.download_button("📄 Detaylı Raporu İndir", data=rapor_icerik, file_name="Risk_Raporu.txt", mime="text/plain")
             st.divider()
 
-            historical_quakes = get_historical_quakes(lat, lon)
             st.info("ℹ️ **Harita Bilgisi:** Renkli alanlar risk çemberleridir **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir. Sağ üst köşeden harita görünümünü değiştirebilirsiniz.")
 
             start_loc = [lat, lon]
@@ -155,7 +203,6 @@ Risk Seviyesi        : {risk_level}
             historical_quakes = []
             line_coords = []
 
-        # --- TEK HARİTA OLUŞTURUMU ---
         m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True, tiles=None)
         
         folium.TileLayer(
@@ -173,7 +220,6 @@ Risk Seviyesi        : {risk_level}
         
         folium.TileLayer('OpenStreetMap', name='Sokak Haritası', overlay=False).add_to(m)
 
-        # Fay Çizgileri
         folium.GeoJson(
             faults_display, 
             style_function=lambda x: {'color': 'black', 'weight': 1.5, 'opacity': 0.8},
