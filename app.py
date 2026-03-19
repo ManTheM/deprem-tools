@@ -128,7 +128,7 @@ def draw_map(lat, lon, faults_display, historical_quakes, line_coords):
 def main():
     setup_page()
     init_session_state()
-    st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
+    st.title("📍 Konuma Bağlı Fay Hattına Uzaklık Sorgulama")
 
     faults_display, faults_utm = load_data()
     if faults_display is None: return
@@ -166,8 +166,11 @@ def main():
             st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.9rem;'>📍 {st.session_state.current_address}</p>", unsafe_allow_html=True)
             
             if historical_quakes:
-                max_mag = max([float(q['properties']['mag']) for q in historical_quakes])
-                max_year = datetime.datetime.fromtimestamp(max([q for q in historical_quakes if float(q['properties']['mag']) == max_mag][0]['properties']['time'] / 1000.0)).year
+                # HATANIN DÜZELTİLDİĞİ TEMİZ PYTHON YÖNTEMİ
+                max_quake = max(historical_quakes, key=lambda q: float(q['properties']['mag']))
+                max_mag = float(max_quake['properties']['mag'])
+                max_year = datetime.datetime.fromtimestamp(max_quake['properties']['time'] / 1000.0).year
+                
                 st.warning(f"Sismik Geçmiş: Son 120 yılda 50km çapında Mw≥5.0 büyüklüğünde **{len(historical_quakes)}** deprem yaşanmış. En büyüğü **{max_mag} Mw** ({max_year}).")
             else:
                 st.success("Sismik Geçmiş: Son 120 yılda 50km çapında Mw≥5.0 büyüklüğünde deprem yaşanmamış.")
