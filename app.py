@@ -15,7 +15,17 @@ st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun. Sistem size en yakın fayı, tehlike çemberlerini ve bölgedeki tarihsel depremleri (Mw > 5.0) sunacaktır.")
 
-# GPS Butonu (Sol üstte yer alır)
+# --- HAFIZA (STATE) YÖNETİMİ ---
+# Harita tıklaması ile GPS butonunun çakışmasını engellemek için
+if "current_lat" not in st.session_state:
+    st.session_state.current_lat = None
+    st.session_state.current_lon = None
+if "last_map_click" not in st.session_state:
+    st.session_state.last_map_click = None
+if "last_gps" not in st.session_state:
+    st.session_state.last_gps = None
+
+# GPS Butonu
 st.write("Mevcut konumunuzu kullanarak hızlı sorgu yapabilirsiniz:")
 location_data = streamlit_geolocation()
 
@@ -44,27 +54,37 @@ try:
 
     if faults_display is not None:
         
-        # Koordinat Belirleme (Öncelik Harita Tıklaması, Sonra GPS)
-        clicked_lat, clicked_lon = None, None
-
-        # İlk Harita (Sadece kullanıcının yer seçmesi için)
+        # İlk Harita (Kullanıcının yer seçmesi için)
         m = folium.Map(location=[39.75, 39.50], zoom_start=8)
         folium.GeoJson(
             faults_display,
-            style_function=lambda x: {'color': 'black', 'weight': 2.0, 'opacity': 0.5}
+            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.5}
         ).add_to(m)
 
         map_output = st_folium(m, width="100%", height=500, key="initial_map")
 
-        # Tıklama veya GPS verisi var mı kontrol et
-        if map_output["last_clicked"]:
-            clicked_lat = map_output["last_clicked"]["lat"]
-            clicked_lon = map_output["last_clicked"]["lng"]
-        elif location_data and location_data.get('latitude') is not None:
-            clicked_lat = location_data['latitude']
-            clicked_lon = location_data['longitude']
+        # --- ETKİLEŞİM KONTROLÜ ---
+        # 1. GPS verisi geldiyse ve yeniyse onu kullan
+        if location_data and location_data.get('latitude') is not None:
+            gps_tuple = (location_data['latitude'], location_data['longitude'])
+            if st.session_state.last_gps != gps_tuple:
+                st.session_state.last_gps = gps_tuple
+                st.session_state.current_lat = gps_tuple[0]
+                st.session_state.current_lon = gps_tuple[1]
 
-        # Eğer bir koordinat elde edildiyse hesaplamalara başla
+        # 2. Haritaya tıklandıysa ve yeniyse onu kullan (GPS'i ezer)
+        if map_output and map_output.get("last_clicked"):
+            click_tuple = (map_output["last_clicked"]["lat"], map_output["last_clicked"]["lng"])
+            if st.session_state.last_map_click != click_tuple:
+                st.session_state.last_map_click = click_tuple
+                st.session_state.current_lat = click_tuple[0]
+                st.session_state.current_lon = click_tuple[1]
+
+        # Hesaplamalar için hafızadaki son koordinatları al
+        clicked_lat = st.session_state.current_lat
+        clicked_lon = st.session_state.current_lon
+
+        # Eğer bir koordinat elde edildiyse (Tıklama veya GPS ile) hesaplamalara başla
         if clicked_lat and clicked_lon:
             p_geom = Point(clicked_lon, clicked_lat)
             p_utm_series = gpd.GeoSeries([p_geom], crs="EPSG:4326").to_crs(epsg=5259)
