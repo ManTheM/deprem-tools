@@ -60,12 +60,18 @@ def translate_slip_type(raw_type):
         return "Bilinmiyor"
     
     raw_lower = raw_type.lower()
-    if "strike-slip" in raw_lower or "strike slip" in raw_lower:
+    
+    # Akademik terimleri halkın ve öğrencilerin anlayacağı dile çeviriyoruz
+    if "dextral" in raw_lower or "right-lateral" in raw_lower or "right lateral" in raw_lower:
+        return "Sağ Yönlü Doğrultu Atımlı Fay (Örn: Kuzey Anadolu Fayı karakterinde)"
+    elif "sinistral" in raw_lower or "left-lateral" in raw_lower or "left lateral" in raw_lower:
+        return "Sol Yönlü Doğrultu Atımlı Fay (Örn: Doğu Anadolu Fayı karakterinde)"
+    elif "strike-slip" in raw_lower or "strike slip" in raw_lower:
         return "Doğrultu Atımlı Fay"
     elif "normal" in raw_lower:
-        return "Normal Atımlı Fay"
+        return "Normal Atımlı Fay (Düşey Yönlü Hareket)"
     elif "reverse" in raw_lower or "thrust" in raw_lower:
-        return "Ters / Bindirme Fayı"
+        return "Ters / Bindirme Fayı (Sıkışma Rejimi)"
     elif "transform" in raw_lower:
         return "Transform Fay"
     else:
@@ -96,7 +102,7 @@ try:
             line_gdf = gpd.GeoSeries([line_geom], crs="EPSG:5259").to_crs(epsg=4326)
             line_coords = [(p[1], p[0]) for p in line_gdf.iloc[0].coords]
 
-            # Fay Tipi Çıkarımı
+            # Fay Kinematiği (Tipi) Çıkarımı
             raw_slip = faults_display.iloc[nearest_idx].get("slip_type", "Bilinmiyor")
             fay_tipi = translate_slip_type(raw_slip)
 
@@ -111,24 +117,22 @@ try:
 
             st.divider()
             
-            # 3 Sütunlu Metrik Alanı
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric("📏 En Yakın Faya Mesafe", f"{distance_km:.2f} km")
             with c2:
-                st.metric("⚙️ Fay Tipi (Karakteri)", fay_tipi)
+                st.metric("⚙️ Fay Tipi (Kinematiği)", fay_tipi)
             with c3:
                 st.metric("⚠️ Risk Derecesi", f"{risk_color} {risk_level}")
             
-            # Rapor Butonu (Alta alındı)
             rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
 Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
 Sorgulanan Koordinatlar: Enlem {lat:.5f}, Boylam {lon:.5f}
 
 --- ANALIZ SONUCLARI ---
 En Yakin Faya Mesafe : {distance_km:.2f} km
-Fay Tipi (Karakteri): {fay_tipi}
-Risk Seviyesi       : {risk_level}
+Fay Tipi (Kinematigi): {fay_tipi}
+Risk Seviyesi        : {risk_level}
 
 * Bu analiz USGS tarihsel deprem verileri ve aktif fay haritasi baz alinarak hesaplanmistir. Sadece farkindalik amaclidir.
 """
