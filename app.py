@@ -15,7 +15,7 @@ st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun.")
 
-# --- HAFIZA (STATE) YÖNETİMİ (Sorun 1 ve 2'nin Çözümü) ---
+# --- HAFIZA (STATE) YÖNETİMİ ---
 if "current_lat" not in st.session_state:
     st.session_state.current_lat = None
     st.session_state.current_lon = None
@@ -28,13 +28,13 @@ if "last_gps_data" not in st.session_state:
 st.write("**Mevcut konumunuzu kullanmak için butona tıklayın:**")
 location_data = streamlit_geolocation()
 
-# GPS Tıklamasını Yakalama (Sadece yeni bir GPS verisi gelirse çalışır)
+# GPS Tıklamasını Yakalama
 if location_data and location_data.get('latitude') is not None:
     if st.session_state.last_gps_data != location_data:
         st.session_state.last_gps_data = location_data
         st.session_state.current_lat = location_data['latitude']
         st.session_state.current_lon = location_data['longitude']
-        st.rerun() # Yeni GPS geldi, sayfayı yenile
+        st.rerun()
 
 @st.cache_data
 def load_data():
@@ -42,7 +42,7 @@ def load_data():
     if not os.path.exists(geojson_file):
         return None, None
     gdf = gpd.read_file(geojson_file)
-    gdf_utm = gdf.to_crs(epsg=5259) # Metrik hesap için UTM
+    gdf_utm = gdf.to_crs(epsg=5259)
     return gdf, gdf_utm
 
 def get_historical_quakes(lat, lon):
@@ -54,6 +54,22 @@ def get_historical_quakes(lat, lon):
     except:
         pass
     return []
+
+def translate_slip_type(raw_type):
+    if not isinstance(raw_type, str):
+        return "Bilinmiyor"
+    
+    raw_lower = raw_type.lower()
+    if "strike-slip" in raw_lower or "strike slip" in raw_lower:
+        return "Doğrultu Atımlı Fay"
+    elif "normal" in raw_lower:
+        return "Normal Atımlı Fay"
+    elif "reverse" in raw_lower or "thrust" in raw_lower:
+        return "Ters / Bindirme Fayı"
+    elif "transform" in raw_lower:
+        return "Transform Fay"
+    else:
+        return raw_type.title()
 
 try:
     faults_display, faults_utm = load_data()
@@ -69,7 +85,6 @@ try:
             p_utm_series = gpd.GeoSeries([p_geom], crs="EPSG:4326").to_crs(epsg=5259)
             p_utm = p_utm_series.iloc[0] 
 
-            # Mesafe ve En Yakın Fay
             distances = faults_utm.distance(p_utm)
             nearest_idx = distances.idxmin()
             distance_km = distances.min() / 1000
@@ -81,7 +96,10 @@ try:
             line_gdf = gpd.GeoSeries([line_geom], crs="EPSG:5259").to_crs(epsg=4326)
             line_coords = [(p[1], p[0]) for p in line_gdf.iloc[0].coords]
 
-            # Risk Seviyesi
+            # Fay Tipi Çıkarımı
+            raw_slip = faults_display.iloc[nearest_idx].get("slip_type", "Bilinmiyor")
+            fay_tipi = translate_slip_type(raw_slip)
+
             if distance_km <= 1.0:
                 risk_level, risk_color = "Çok Yüksek", "🔴"
             elif distance_km <= 5.0:
@@ -92,55 +110,70 @@ try:
                 risk_level, risk_color = "Düşük", "🟢"
 
             st.divider()
+            
+            # 3 Sütunlu Metrik Alanı
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.metric("📏 En Yakın Faya Mesafe", f"{distance_km:.2f} km")
             with c2:
-                st.metric("⚠️ Risk Derecesi", f"{risk_color} {risk_level}")
+                st.metric("⚙️ Fay Tipi (Karakteri)", fay_tipi)
             with c3:
-                rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
-Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
-Sorgulanan: Enlem {lat:.5f}, Boylam {lon:.5f}
-En Yakin Faya Mesafe: {distance_km:.2f} km
-Risk Seviyesi: {risk_level}
-"""
-                st.download_button("📄 Raporu İndir", data=rapor_icerik, file_name="Risk_Raporu.txt", mime="text/plain")
-
-            # Deprem Verisi
-            historical_quakes = get_historical_quakes(lat, lon)
+                st.metric("⚠️ Risk Derecesi", f"{risk_color} {risk_level}")
             
-            # Halkalar ve Bilgi Notu (Sorun 3'ün Çözümü)
-            st.info("ℹ️ **Harita Bilgisi:** Haritada gördüğünüz renkli alanlar risk çemberleridir. **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir.")
+            # Rapor Butonu (Alta alındı)
+            rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
+Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
+Sorgulanan Koordinatlar: Enlem {lat:.5f}, Boylam {lon:.5f}
 
-            # Haritayı tıklanan yere odakla
+--- ANALIZ SONUCLARI ---
+En Yakin Faya Mesafe : {distance_km:.2f} km
+Fay Tipi (Karakteri): {fay_tipi}
+Risk Seviyesi       : {risk_level}
+
+* Bu analiz USGS tarihsel deprem verileri ve aktif fay haritasi baz alinarak hesaplanmistir. Sadece farkindalik amaclidir.
+"""
+            st.download_button("📄 Detaylı Raporu İndir", data=rapor_icerik, file_name="Risk_Raporu.txt", mime="text/plain")
+            st.divider()
+
+            historical_quakes = get_historical_quakes(lat, lon)
+            st.info("ℹ️ **Harita Bilgisi:** Renkli alanlar risk çemberleridir **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir. Sağ üst köşeden Uydu görünümüne geçebilirsiniz.")
+
             start_loc = [lat, lon]
             start_zoom = 11
         else:
-            # Uygulama ilk açıldığında GPS'e gitmez, buradaki koordinatta (Erzincan) bekler.
             start_loc = [39.75, 39.50]
             start_zoom = 8
             historical_quakes = []
             line_coords = []
 
-        # --- TEK HARİTA OLUŞTURUMU ---
-        m = folium.Map(location=start_loc, zoom_start=start_zoom)
+        # --- TEK HARİTA OLUŞTURUMU (Uydu Seçenekli) ---
+        m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True)
         
-        # Faylar her zaman görünür (Tıklanabilir olmalarına gerek yok)
+        folium.TileLayer(
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri',
+            name='Uydu Görüntüsü'
+        ).add_to(m)
+        folium.TileLayer(
+            tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            attr='OpenTopoMap',
+            name='Topografik Harita'
+        ).add_to(m)
+        
+        folium.TileLayer('OpenStreetMap', name='Sokak Haritası').add_to(m)
+
         folium.GeoJson(
             faults_display, 
-            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.6},
-            interactive=False
+            style_function=lambda x: {'color': 'black', 'weight': 1.5, 'opacity': 0.8},
+            interactive=False,
+            name='Aktif Fay Hatları'
         ).add_to(m)
 
-        # Eğer koordinat seçilmişse ekstra katmanları ekle
         if st.session_state.current_lat and st.session_state.current_lon:
-            
-            # Tehlike Çemberleri (interactive=False sayesinde tıklamayı engellemez)
             folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1, interactive=False).add_to(m)
             
-            # Depremler (Mor Halkalar)
             if historical_quakes:
                 for q in historical_quakes:
                     coords = q['geometry']['coordinates']
@@ -149,23 +182,21 @@ Risk Seviyesi: {risk_level}
                     folium.CircleMarker(
                         location=[coords[1], coords[0]], radius=float(mag) * 2.5,
                         color="purple", fill=True, tooltip=f"Yıl: {yil} | {mag} Mw",
-                        interactive=True # Depremlerin üzerine gelince bilgi çıksın
+                        interactive=True
                     ).add_to(m)
 
-            # Merkez Nokta ve Çizgi
             folium.Marker(start_loc, tooltip="Seçili Konum").add_to(m)
             folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5', interactive=False).add_to(m)
 
-        # Haritayı Ekrana Bas
+        folium.LayerControl(position='topright').add_to(m)
+
         map_output = st_folium(m, width="100%", height=650, key="main_map")
 
-        # Haritaya Tıklamayı Yakala
         if map_output and map_output.get("last_clicked"):
             click_lat = map_output["last_clicked"]["lat"]
             click_lon = map_output["last_clicked"]["lng"]
             click_tuple = (click_lat, click_lon)
             
-            # Eğer yeni tıklanan yer eskisinden farklıysa hafızayı güncelle ve REFRESH at
             if st.session_state.last_map_click != click_tuple:
                 st.session_state.last_map_click = click_tuple
                 st.session_state.current_lat = click_lat
