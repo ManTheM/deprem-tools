@@ -50,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Üst Başlık
-st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
+st.title("📍 Konumunuza En Yakın Fay Hattına Uzaklık Sorgulama")
 
 # --- HAFIZA (STATE) YÖNETİMİ ---
 if "current_lat" not in st.session_state:
