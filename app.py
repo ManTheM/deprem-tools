@@ -13,8 +13,7 @@ from urllib.parse import quote
 # Sayfa Ayarları (Tam ekran genişliği)
 st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide", initial_sidebar_state="collapsed")
 
-# --- ÖZEL CSS (Gereksiz boşlukları silme, metrik boyutları ve kompakt tasarım) ---
-# artifactleri engellemek için etkileşim ayarları
+# --- ÖZEL CSS (Boşlukları traşlama, metrik boyutları ve kompakt tasarım) ---
 st.markdown("""
     <style>
     /* Uygulamanın üstündeki devasa boşluğu siler */
@@ -27,6 +26,7 @@ st.markdown("""
         padding-bottom: 0.2rem !important;
         font-size: 1.8rem !important;
     }
+    /* Harita tıklandığında çıkan gri kutu artifact'ini (Problemler 1'in çözümü) engeller */
     .leaflet-interactive {
         outline: none !important;
     }
@@ -57,7 +57,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Üst Başlık (CSS ile üst boşluk traşlandı)
+# Üst Başlık
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 
 # --- HAFIZA (STATE) YÖNETİMİ ---
@@ -92,7 +92,7 @@ def get_historical_quakes(lat, lon):
         pass
     return []
 
-# BigDataCloud API ile Reverse Geocoding
+# BigDataCloud API ile Reverse Geocoding (Ücretsiz ve IP engellemesi yapmaz)
 def get_address(lat, lon):
     try:
         url = f"https://api.bigdatacloud.net/data/reverse-geocode-client?latitude={lat}&longitude={lon}&localityLanguage=tr"
@@ -100,7 +100,6 @@ def get_address(lat, lon):
         
         if req.status_code == 200:
             data = req.json()
-            # Anlamlı bir adres metni oluşturma
             mahalle = data.get("locality", "")
             ilce = data.get("city", "")
             il = data.get("principalSubdivision", "")
@@ -130,8 +129,6 @@ def translate_slip_type(raw_type):
         return "Normal Atımlı Fay"
     elif "reverse" in raw_lower or "thrust" in raw_lower:
         return "Ters / Bindirme Fayı"
-    elif "oblique" in raw_lower or "verev" in raw_lower:
-        return "Verev / Oblique Atımlı Fay"
     elif "transform" in raw_lower:
         return "Transform Fay"
     else:
@@ -141,6 +138,10 @@ def translate_slip_type(raw_type):
 # ANA YERLEŞİM (SÜTUNLAR)
 # ==========================================
 col_panel, col_map = st.columns([1, 2.5]) # Sol panel daha dar (1 birim), Harita daha geniş (2.5 birim)
+
+# Bu değişkenleri map sütununda da kullanabilmek için yukarıda boş tanımlıyoruz
+selected_image = None
+selected_desc = ""
 
 with col_panel:
     st.write("**Konumunuzu Bulun:**")
@@ -200,12 +201,32 @@ with col_panel:
                 else:
                     risk_level, risk_color = "Düşük", "🟢"
 
-        # Sonuçları Sol Panele Yazdırma (Kompakt ve Sade)
+                # --------------------------------------------------
+                # FAY GÖRSELİ VE AÇIKLAMA EŞLEŞTİRMESİ
+                # --------------------------------------------------
+                fault_images = {
+                    "Sağ Yönlü Doğrultu Atımlı Fay": "SagYanalDogrultuAtimliFay.png",
+                    "Sol Yönlü Doğrultu Atımlı Fay": "SolYanalDogrultuAtimliFay.png",
+                    "Ters / Bindirme Fayı": "TersFay.png",
+                    "Normal Atımlı Fay": "NormalFay.png"
+                }
+                
+                fault_descriptions = {
+                    "Sağ Yönlü Doğrultu Atımlı Fay": "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı bloğun sağa doğru hareket ettiği faylardır. (Örn: Kuzey Anadolu Fayı)",
+                    "Sol Yönlü Doğrultu Atımlı Fay": "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı bloğun sola doğru hareket ettiği faylardır. (Örn: Doğu Anadolu Fayı)",
+                    "Ters / Bindirme Fayı": "Bloklar birbirine doğru sıkışır (Sıkışma rejimi). Üstteki blok diğerinin üzerine itilir.",
+                    "Normal Atımlı Fay": "Bloklar düşey olarak birbirinden uzaklaşır (Çekilme/Gerilme rejimi). Üstteki blok aşağı kayar."
+                }
+                
+                selected_image = fault_images.get(fay_tipi)
+                selected_desc = fault_descriptions.get(fay_tipi, "")
+
+        # Sonuçları Sol Panele Yazdırma
         st.markdown("---")
         st.markdown(f"<h3 style='text-align: center; margin-top: 0;'>{risk_color} Risk: {risk_level}</h3>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.9rem;'>📍 {st.session_state.current_address}</p>", unsafe_allow_html=True)
         
-        # 2. Sismik Geçmiş Özeti (Dinamik Metin - Sarı Kutuda)
+        # Sismik Geçmiş Özeti (Dinamik Metin - Sarı Kutuda)
         if len(historical_quakes) > 0:
             max_mag = 0.0
             max_year = ""
@@ -215,43 +236,23 @@ with col_panel:
                     max_mag = mag
                     max_year = datetime.datetime.fromtimestamp(q['properties']['time'] / 1000.0).year
             
-            sismik_ozet = f"Son 120 yılda bu bölgede 5.0 büyüklüğü üzerinde **{len(historical_quakes)}** deprem yaşanmış. Bölgedeki en büyük deprem {max_year} yılında **{max_mag} Mw** büyüklüğündedir."
-            st.warning(f"Bölgesel Deprem Geçmişi: {sismik_ozet}")
+            sismik_ozet = f"Son 120 yılda 50km çapında Mw≥5.0 büyüklüğünde **{len(historical_quakes)}** deprem yaşanmış. En büyüğü **{max_mag} Mw** büyüklüğündedir ({max_year})."
+            st.warning(f"Sismik Geçmiş: {sismik_ozet}")
         else:
-            st.success("Bölgesel Deprem Geçmişi: Son 120 yılda 50km çapında 5.0 üzeri deprem yaşanmamış.")
+            st.success("Sismik Geçmiş: Son 120 yılda 50km çapında Mw≥5.0 büyüklüğünde deprem yaşanmamış.")
 
         st.markdown("---")
         
-        # Mesafeyi traşlanmış kibar metriklerle basıyoruz (Örn: Kuzey Anadolu Fayı... yazmıyor)
-        st.markdown(f"**📏 En Yakın Faya Mesafe:** {distance_km:.2f} km")
-        st.markdown(f"**⚙️ Fay Tipi (Kinematiği):** {fay_tipi}")
-        
-        # 1. Fay Tipi Bilgi Kartları ve Görseli (Expander)
-        with st.expander("Nasıl Hareket Eder? (Görsel ve Bilgi)"):
-            if os.path.exists("image_4.png"):
-                st.image("image_4.png", caption="Fay Mekanizmaları Şekli", use_column_width=True)
-            else:
-                st.info("Fay Mekanizmaları görseli image_4.png bulunamadı.")
+        # Kibar Metrikler (Kafası kesilmeyen boyut)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("📏 Faya Mesafe", f"{distance_km:.2f} km")
+        with c2:
+            st.metric("⚙️ Fay Tipi", fay_tipi)
             
-            # Fay Tipi metnine göre Türkçe bir mekanik açıklama yaz:
-            if fay_tipi == "Sağ Yönlü Doğrultu Atımlı Fay":
-                explanation = "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı blok sağa hareket eder."
-            elif fay_tipi == "Sol Yönlü Doğrultu Atımlı Fay":
-                explanation = "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı blok sola hareket eder."
-            elif fay_tipi == "Doğrultu Atımlı Fay":
-                explanation = "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder."
-            elif fay_tipi == "Normal Atımlı Fay":
-                explanation = "Bloklar düşey olarak birbirinden uzaklaşır (çekilme). Üstteki blok aşağı kayar."
-            elif fay_tipi == "Ters / Bindirme Fayı":
-                explanation = "Bloklar birbirine doğru sıkışır (sıkışma). Üstteki blok diğerinin üzerine itilir."
-            elif fay_tipi == "Verev / Oblique Atımlı Fay":
-                explanation = "Hem düşey hem de yatay yönlü hareket vardır."
-            else:
-                explanation = ""
-            if explanation:
-                st.write(explanation)
-
-        # Rapor İçeriği (Koordinat ve Adres Korundu)
+        st.write("") 
+        
+        # Raporlama (Koordinat ve Adres Korundu)
         rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
 Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
 
@@ -268,17 +269,16 @@ Risk Seviyesi        : {risk_level}
 """
         st.download_button("📄 Detaylı Raporu İndir", data=rapor_icerik, file_name="Risk_Raporu.txt", mime="text/plain", use_container_width=True)
 
-        # 3. e-Devlet Toplanma Alanı Yönlendirmesi
-        edevlet_link = "https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-baskanligi-afet-ve-acil-durum-toplanma-alani-sorgulama"
+        # e-Devlet Toplanma Alanı Yönlendirmesi (Güncel Link)
+        edevlet_link = "https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-acil-toplanma-alani-sorgulama"
         st.link_button("🏢 Toplanma Alanı Sorgula", edevlet_link, use_container_width=True)
         
-        # 4. WhatsApp Paylaş Butonu (Dinamik Metin)
+        # WhatsApp Paylaş Butonu (Dinamik Metin)
         address_for_share = st.session_state.current_address.split(',')[0].strip() # Sadece mahalle-ilçe
-        if not address_for_share:
-            address_for_share = "Bilinmeyen Konum"
-        paylasilacak_metin = f"{address_for_share} konumundaki sorgu sonucum: Faya Mesafe {distance_km:.2f} km, Risk {risk_color} {risk_level}. Sen de riskini öğren: https://mehmetsafa.streamlit.app" # URL encode edilmeli
+        if not address_for_share: address_for_share = "Bilinmeyen Konum"
+        paylasilacak_metin = f"{address_for_share} konumundaki sorgu sonucum: Faya Mesafe {distance_km:.2f} km, Risk {risk_color} {risk_level}. Sen de riskini öğren: https://deprem-analiz.streamlit.app"
         whatsapp_share_url = f"https://wa.me/?text={quote(paylasilacak_metin)}"
-        st.link_button("📲 Sonuçları WhatsApp'ta Paylaş", whatsapp_share_url, use_container_width=True, help="Mobil cihazda WhatsApp yüklüyse uygulamayı açar; bilgisayarda WhatsApp Web yüklüyse tarayıcıda açar.")
+        st.link_button("📲 WhatsApp'ta Paylaş", whatsapp_share_url, use_container_width=True)
 
     else:
         # Konum seçilmediyse sol panelde görünecek mesaj
@@ -297,8 +297,7 @@ with col_map:
         start_zoom = 8
 
     if faults_display is not None:
-        # Harita Ortasındaki Gri Kutu (x box) artifact'ini (Problemler 1'in çözümü) koru.
-        # click_for_marker=False ve dummy objeleri returned_objects'e ekleyerek.
+        # click_for_marker=False ve dummy objeleri returned_objects'e ekleyerek Artifact'leri engelle.
         m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True, tiles=None, click_for_marker=False)
         
         folium.TileLayer(
@@ -309,7 +308,7 @@ with col_map:
             tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
             attr='OpenTopoMap', name='Topografik Harita', overlay=False
         ).add_to(m)
-        # Menüdeki bozuk openstreetmap yazısını düzelten çözüm (Problemler 2'nin çözümü)
+        # Menüdeki bozuk openstreetmap yazısını düzelten çözüm
         folium.TileLayer('OpenStreetMap', name='Sokak Haritası', overlay=False).add_to(m)
 
         # Fay Çizgileri (Kalınlaştırılmış 1.5, opacity 0.8)
@@ -320,34 +319,54 @@ with col_map:
         ).add_to(m)
 
         if st.session_state.current_lat and st.session_state.current_lon:
+            # Risk Çemberleri (interactive=False sayesinde tıklamayı engellemez)
             folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1, interactive=False).add_to(m)
             
-            # Depremler (Mor Halkalar)
+            # Depremler (Mor Halkalar Mw>=5.0)
             if historical_quakes:
                 for q in historical_quakes:
                     coords = q['geometry']['coordinates']
                     mag = q['properties']['mag']
                     yil = datetime.datetime.fromtimestamp(q['properties']['time'] / 1000.0).year if q['properties']['time'] else ""
                     folium.CircleMarker(
-                        location=[coords[1], coords[0]], radius=float(mag) * 2.5,
+                        location=[coords[1], coords[0]], radius=float(mag) * 2.5, # Büyüklüğe göre daire çapı
                         color="purple", fill=True, tooltip=f"Yıl: {yil} | {mag} Mw",
                         interactive=True # Depremlerin üzerine gelince bilgi çıksın
                     ).add_to(m)
 
+            # Seçili Konum Markeri (X kutusu artifactini gideren temiz ikon)
             folium.Marker(start_loc, tooltip="Seçili Konum", icon=folium.Icon(color='red', icon='info-sign')).add_to(m)
+            # Kesikli Bağlantı Çizgisi
             folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5', interactive=False).add_to(m)
 
         folium.LayerControl(position='topright').add_to(m)
 
         # Haritayı Sağ Sütuna Bas (CBS Dashboard Formatı)
-        # Artifactleri engellemek içinreturned_objects'e sadece last_clicked iste, dummy popup'ları kapat.
         map_output = st_folium(m, use_container_width=True, height=600, key="main_map", returned_objects=["last_clicked"])
 
-        st.caption("ℹ️ **Bilgi:** Renkli çemberler (🔴 1 km | 🟠 5 km | 🟡 15 km) risk alanlarını; mor daireler USGS verilerine göre 5.0 büyüklüğünden büyük geçmiş depremleri gösterir.")
+        # --------------------------------------------------
+        # HARİTANIN ALTINA GÖRSEL VE AÇIKLAMA EKLEME
+        # --------------------------------------------------
+        if selected_image and os.path.exists(selected_image):
+            st.write("") # Spacer
+            # Dinamik bir Markdown başlığı ile fay tipini büyükçe yaz
+            st.markdown(f"#### 🔎 Fay Mekanizması Görsel Kesiti: **{fay_tipi}**")
+            
+            # Resmi haritanın genişliğine sığacak şekilde (örneğin width=700) ölçekle
+            # user_container_width=True da kullanılabilir ama çok devasa olabilir.
+            # 700px yazıları okunabilir tutmak için iyi bir dengedir.
+            st.image(selected_image, caption=f"{fay_tipi} modeli", width=700)
+            
+            if selected_desc:
+                # Akademik açıklamayı resmin hemen altına ekle
+                st.info(f"💡 **Mekanik Açıklama:** {selected_desc}")
+        
+        st.markdown("---") # Ayırıcı çizgi
+        st.caption("ℹ️ **Bilgi:** Renkli çemberler (🔴 1 km | 🟠 5 km | 🟡 15 km) risk alanlarını; mor daireler USGS verilerine göre Mw≥5.0 büyüklüğünden büyük depremleri gösterir.")
 
-        # Harita Tıklama Yakalama
+        # Harita Tıklama Yakalama (En sonda çalışır, state'i günceller)
         if map_output and map_output.get("last_clicked"):
             click_lat = map_output["last_clicked"]["lat"]
             click_lon = map_output["last_clicked"]["lng"]
@@ -358,3 +377,9 @@ with col_map:
                 st.session_state.current_lat = click_lat
                 st.session_state.current_lon = click_lon
                 st.rerun()
+
+    else:
+        st.error("GeoJSON dosyası yüklenemedi.")
+
+except Exception as e:
+    st.error(f"Sistemsel bir hata oluştu: {e}")
