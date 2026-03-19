@@ -70,12 +70,14 @@ def get_historical_quakes(lat, lon):
 
 def get_address(lat, lon):
     try:
-        geolocator = Nominatim(user_agent="afet_kultur_uygulamasi")
-        location = geolocator.reverse(f"{lat}, {lon}", exactly_one=True, timeout=5)
+        # User-agent'ı biraz daha spesifik yapıyoruz ki bot sanmasınlar
+        geolocator = Nominatim(user_agent="m_safa_deprem_analiz_v1")
+        location = geolocator.reverse(f"{lat}, {lon}", exactly_one=True, timeout=10)
         if location:
             return location.address
-    except:
-        pass
+    except Exception as e:
+        # Gerçek hatayı ekrana basıyoruz ki sorunu anlayalım
+        return f"Sistem Hatası: {e}"
     return "Adres detayları sunucudan alınamadı."
 
 def translate_slip_type(raw_type):
