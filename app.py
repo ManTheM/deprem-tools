@@ -12,19 +12,33 @@ from streamlit_geolocation import streamlit_geolocation
 # Sayfa Ayarları
 st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 
-# --- ÖZEL CSS (Görsel İyileştirme) ---
+# --- ÖZEL CSS (Görsel İyileştirme - Problemleri 3'ün Kesin Çözümü) ---
 st.markdown("""
     <style>
-    /* Metric kutularındaki ana değerlerin (rakam/metin) boyutunu küçült ve sığdır */
-    div[data-testid="stMetricValue"] > div {
-        font-size: 1.4rem !important; 
-        white-space: normal !important; 
-        line-height: 1.3 !important;
+    /* Metric kutularının tamamını kapsayan alanı esnek yap */
+    [data-testid="stMetricValue"] {
+        height: auto !important;
+        min-height: 50px !important;
     }
+    
+    /* Metric içindeki ana metnin (Örn: Fay Tipi) boyutunu küçült ve sığdır */
+    div[data-testid="stMetricValue"] > div {
+        font-size: 1.1rem !important; /* Kibar boyut */
+        white-space: normal !important; /* Kesmeyi engelle, alt satıra geç */
+        line-height: 1.3 !important;
+        overflow-wrap: break-word !important; /* Kelime çok uzunsa böl */
+        font-weight: 500 !important;
+    }
+    
     /* Metric başlıklarının (Etiketlerin) boyutunu ayarla */
     div[data-testid="stMetricLabel"] {
-        font-size: 0.95rem !important;
-        margin-bottom: 5px !important;
+        font-size: 0.9rem !important;
+        margin-bottom: 3px !important;
+    }
+
+    /* Haritanın sol üstündeki etkileşim artifactlerini engellemek için ek CSS */
+    .leaflet-interactive {
+        outline: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -136,6 +150,7 @@ try:
             with c1:
                 st.metric("📏 En Yakın Faya Mesafe", f"{distance_km:.2f} km")
             with c2:
+                # Yazılar CSS sayesinde artık kibar ve kesilmiyor
                 st.metric("⚙️ Fay Tipi (Kinematiği)", fay_tipi)
             with c3:
                 st.metric("⚠️ Risk Derecesi", f"{risk_color} {risk_level}")
@@ -155,7 +170,7 @@ Risk Seviyesi        : {risk_level}
             st.divider()
 
             historical_quakes = get_historical_quakes(lat, lon)
-            st.info("ℹ️ **Harita Bilgisi:** Renkli alanlar risk çemberleridir **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir. Sağ üst köşeden Uydu görünümüne geçebilirsiniz.")
+            st.info("ℹ️ **Harita Bilgisi:** Renkli alanlar risk çemberleridir **(🔴 1 km | 🟠 5 km | 🟡 15 km)**. Mor daireler ise o bölgedeki 5.0 büyüklüğünden büyük geçmiş depremleri gösterir. Sağ üst köşeden harita görünümünü değiştirebilirsiniz.")
 
             start_loc = [lat, lon]
             start_zoom = 11
@@ -165,34 +180,42 @@ Risk Seviyesi        : {risk_level}
             historical_quakes = []
             line_coords = []
 
-        # --- TEK HARİTA OLUŞTURUMU (Uydu Seçenekli) ---
-        m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True)
+        # --- TEK HARİTA OLUŞTURUMU (Problemlerin 1 ve 2'nin Çözümü) ---
+        # tiles=None diyerek varsayılan katmanları kapattık
+        m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True, tiles=None)
         
+        # Manuel olarak harita katmanlarını formatlı isimlerle ekliyoruz
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             attr='Esri',
-            name='Uydu Görüntüsü'
+            name='Uydu Görüntüsü',
+            overlay=False # Base map olarak ayarla
         ).add_to(m)
         folium.TileLayer(
             tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
             attr='OpenTopoMap',
-            name='Topografik Harita'
+            name='Topografik Harita',
+            overlay=False
         ).add_to(m)
         
-        folium.TileLayer('OpenStreetMap', name='Sokak Haritası').add_to(m)
+        # Varsayılan Sokak Haritası (Kibar isimle en üste)
+        folium.TileLayer('OpenStreetMap', name='Sokak Haritası', overlay=False).add_to(m)
 
+        # Fay Çizgileri
         folium.GeoJson(
             faults_display, 
             style_function=lambda x: {'color': 'black', 'weight': 1.5, 'opacity': 0.8},
-            interactive=False,
+            interactive=False, # Tıklamayı içinden geçir
             name='Aktif Fay Hatları'
         ).add_to(m)
 
         if st.session_state.current_lat and st.session_state.current_lon:
+            # Risk Çemberleri (interactive=False sayesinde tıklamayı engellemez)
             folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1, interactive=False).add_to(m)
             
+            # Depremler
             if historical_quakes:
                 for q in historical_quakes:
                     coords = q['geometry']['coordinates']
@@ -204,12 +227,27 @@ Risk Seviyesi        : {risk_level}
                         interactive=True
                     ).add_to(m)
 
-            folium.Marker(start_loc, tooltip="Seçili Konum").add_to(m)
+            # Seçili Konum Markeri (Daha temiz ikon - Sorun 1 Çözümü)
+            # interactive=True kalsın ki üzerine gelince tooltip çıksın
+            folium.Marker(
+                start_loc, 
+                tooltip="Seçili Konum", 
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+            
             folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5', interactive=False).add_to(m)
 
+        # Katman Kontrol Menüsü (Formatlı isimlerle sağ üstte)
         folium.LayerControl(position='topright').add_to(m)
 
-        map_output = st_folium(m, width="100%", height=650, key="main_map")
+        # Haritayı Ekrana Bas (Artifactleri engellemek için etkileşim ayarları)
+        map_output = st_folium(
+            m, 
+            width="100%", 
+            height=650, 
+            key="main_map",
+            returned_objects=["last_clicked"] # Sadece tıklama verisini iste, dummy objeleri azalt
+        )
 
         if map_output and map_output.get("last_clicked"):
             click_lat = map_output["last_clicked"]["lat"]
