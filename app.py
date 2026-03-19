@@ -16,7 +16,6 @@ st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide", 
 # --- ÖZEL CSS (Boşlukları traşlama, metrik boyutları ve kompakt tasarım) ---
 st.markdown("""
     <style>
-    /* Uygulamanın üstündeki devasa boşluğu siler */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 0.5rem !important;
@@ -26,21 +25,16 @@ st.markdown("""
         padding-bottom: 0.2rem !important;
         font-size: 1.8rem !important;
     }
-    /* Harita tıklandığında çıkan gri kutu artifact'ini engeller */
     .leaflet-interactive {
         outline: none !important;
     }
-    /* Metin aralıklarını daralt */
     p {
         margin-bottom: 0.3rem !important;
     }
-    /* Metric kutularının tamamını kapsayan alanı esnek yap */
     [data-testid="stMetricValue"] {
         height: auto !important;
         min-height: 50px !important;
     }
-    
-    /* Metric içindeki ana metnin boyutunu küçült ve sığdır (Kesilmeyen kibar boyut) */
     div[data-testid="stMetricValue"] > div {
         font-size: 1.1rem !important; 
         white-space: normal !important; 
@@ -48,8 +42,6 @@ st.markdown("""
         overflow-wrap: break-word !important; 
         font-weight: 500 !important;
     }
-    
-    /* Metric başlıklarının (Etiketlerin) boyutunu ayarla */
     div[data-testid="stMetricLabel"] {
         font-size: 0.9rem !important;
         margin-bottom: 2px !important;
@@ -134,8 +126,6 @@ def translate_slip_type(raw_type):
 try:
     # ANA YERLEŞİM (SÜTUNLAR)
     col_panel, col_map = st.columns([1, 2.5]) 
-    selected_image = None
-    selected_desc = ""
 
     with col_panel:
         st.write("**Konumunuzu Bulun:**")
@@ -194,15 +184,7 @@ try:
                         "Normal Atımlı Fay": "NormalFay.png"
                     }
                     
-                    fault_descriptions = {
-                        "Sağ Yönlü Doğrultu Atımlı Fay": "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı bloğun sağa doğru hareket ettiği faylardır. (Örn: Kuzey Anadolu Fayı)",
-                        "Sol Yönlü Doğrultu Atımlı Fay": "Bloklar yatay olarak birbirine sürtünerek zıt yönlerde hareket eder. Karşı bloğun sola doğru hareket ettiği faylardır. (Örn: Doğu Anadolu Fayı)",
-                        "Ters / Bindirme Fayı": "Bloklar birbirine doğru sıkışır (Sıkışma rejimi). Üstteki blok diğerinin üzerine itilir.",
-                        "Normal Atımlı Fay": "Bloklar düşey olarak birbirinden uzaklaşır (Çekilme/Gerilme rejimi). Üstteki blok aşağı kayar."
-                    }
-                    
                     selected_image = fault_images.get(fay_tipi)
-                    selected_desc = fault_descriptions.get(fay_tipi, "")
 
             st.markdown("---")
             st.markdown(f"<h3 style='text-align: center; margin-top: 0;'>{risk_color} Risk: {risk_level}</h3>", unsafe_allow_html=True)
@@ -224,11 +206,14 @@ try:
 
             st.markdown("---")
             
-            c1, c2 = st.columns(2)
-            with c1:
-                st.metric("📏 Faya Mesafe", f"{distance_km:.2f} km")
-            with c2:
-                st.metric("⚙️ Fay Tipi", fay_tipi)
+            # Alt alta daha temiz yerleşim
+            st.metric("📏 Faya Mesafe", f"{distance_km:.2f} km")
+            st.metric("⚙️ Fay Tipi", fay_tipi)
+            
+            # Resim Butonu (Sadece görsel içerir)
+            if selected_image and os.path.exists(selected_image):
+                with st.expander("🔎 Fay Mekanizması Görseli"):
+                    st.image(selected_image, use_container_width=True)
                 
             st.write("") 
             
@@ -313,15 +298,7 @@ Risk Seviyesi        : {risk_level}
 
             map_output = st_folium(m, use_container_width=True, height=600, key="main_map", returned_objects=["last_clicked"])
 
-            if selected_image and os.path.exists(selected_image):
-                st.write("") 
-                st.markdown(f"#### 🔎 Fay Mekanizması Görsel Kesiti: **{fay_tipi}**")
-                st.image(selected_image, caption=f"{fay_tipi} modeli", width=700)
-                
-                if selected_desc:
-                    st.info(f"💡 **Mekanik Açıklama:** {selected_desc}")
-            
-            st.markdown("---") 
+            # Bilgi Metni artık tam olarak haritanın dibinde!
             st.caption("ℹ️ **Bilgi:** Renkli çemberler (🔴 1 km | 🟠 5 km | 🟡 15 km) risk alanlarını; mor daireler USGS verilerine göre Mw≥5.0 büyüklüğünden büyük depremleri gösterir.")
 
             if map_output and map_output.get("last_clicked"):
