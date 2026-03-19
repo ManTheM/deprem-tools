@@ -238,7 +238,7 @@ Risk Seviyesi        : {risk_level}
             
             address_for_share = st.session_state.current_address.split(',')[0].strip()
             if not address_for_share: address_for_share = "Bilinmeyen Konum"
-            paylasilacak_metin = f"{address_for_share} konumundaki sorgu sonucum: Faya Mesafe {distance_km:.2f} km, Risk {risk_color} {risk_level}. Sen de riskini öğren: https://deprem-analiz.streamlit.app"
+            paylasilacak_metin = f"{address_for_share} konumundaki sorgu sonucum: Faya Mesafe {distance_km:.2f} km, Risk {risk_color} {risk_level}. Sen de riskini öğren: https://deprem-tools-gm2d2cwzijowgjprvwpusd.streamlit.app/"
             whatsapp_share_url = f"https://wa.me/?text={quote(paylasilacak_metin)}"
             st.link_button("📲 WhatsApp'ta Paylaş", whatsapp_share_url, use_container_width=True)
 
