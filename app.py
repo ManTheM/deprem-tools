@@ -70,15 +70,29 @@ def get_historical_quakes(lat, lon):
 
 def get_address(lat, lon):
     try:
-        # User-agent'ı biraz daha spesifik yapıyoruz ki bot sanmasınlar
-        geolocator = Nominatim(user_agent="m_safa_deprem_analiz_v1")
-        location = geolocator.reverse(f"{lat}, {lon}", exactly_one=True, timeout=10)
-        if location:
-            return location.address
+        # Streamlit Cloud'da engellenmeyen, ücretsiz alternatif adres servisi
+        url = f"https://api.bigdatacloud.net/data/reverse-geocode-client?latitude={lat}&longitude={lon}&localityLanguage=tr"
+        req = requests.get(url, timeout=5)
+        
+        if req.status_code == 200:
+            data = req.json()
+            
+            # Anlamlı bir adres metni oluşturma
+            mahalle = data.get("locality", "")
+            ilce = data.get("city", "")
+            il = data.get("principalSubdivision", "")
+            
+            # Boş olanları filtrele ve virgülle birleştir
+            adres_parcalari = [p for p in [mahalle, ilce, il] if p]
+            
+            if adres_parcalari:
+                return ", ".join(adres_parcalari)
+            else:
+                return "Bölge bilgisi bulunamadı."
+        else:
+            return f"Adres API Hatası (Kod: {req.status_code})"
     except Exception as e:
-        # Gerçek hatayı ekrana basıyoruz ki sorunu anlayalım
         return f"Sistem Hatası: {e}"
-    return "Adres detayları sunucudan alınamadı."
 
 def translate_slip_type(raw_type):
     if not isinstance(raw_type, str):
