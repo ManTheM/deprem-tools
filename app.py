@@ -12,6 +12,23 @@ from streamlit_geolocation import streamlit_geolocation
 # Sayfa Ayarları
 st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 
+# --- ÖZEL CSS (Görsel İyileştirme) ---
+st.markdown("""
+    <style>
+    /* Metric kutularındaki ana değerlerin (rakam/metin) boyutunu küçült ve sığdır */
+    div[data-testid="stMetricValue"] > div {
+        font-size: 1.4rem !important; 
+        white-space: normal !important; 
+        line-height: 1.3 !important;
+    }
+    /* Metric başlıklarının (Etiketlerin) boyutunu ayarla */
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.95rem !important;
+        margin-bottom: 5px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun.")
 
@@ -61,7 +78,6 @@ def translate_slip_type(raw_type):
     
     raw_lower = raw_type.lower()
     
-    # Akademik terimleri halkın ve öğrencilerin anlayacağı dile çeviriyoruz
     if "dextral" in raw_lower or "right-lateral" in raw_lower or "right lateral" in raw_lower:
         return "Sağ Yönlü Doğrultu Atımlı Fay (Örn: Kuzey Anadolu Fayı karakterinde)"
     elif "sinistral" in raw_lower or "left-lateral" in raw_lower or "left lateral" in raw_lower:
@@ -102,7 +118,6 @@ try:
             line_gdf = gpd.GeoSeries([line_geom], crs="EPSG:5259").to_crs(epsg=4326)
             line_coords = [(p[1], p[0]) for p in line_gdf.iloc[0].coords]
 
-            # Fay Kinematiği (Tipi) Çıkarımı
             raw_slip = faults_display.iloc[nearest_idx].get("slip_type", "Bilinmiyor")
             fay_tipi = translate_slip_type(raw_slip)
 
