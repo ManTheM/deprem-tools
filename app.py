@@ -12,37 +12,6 @@ from streamlit_geolocation import streamlit_geolocation
 # Sayfa Ayarları
 st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide")
 
-# --- ÖZEL CSS (Görsel İyileştirme - Problemleri 3'ün Kesin Çözümü) ---
-st.markdown("""
-    <style>
-    /* Metric kutularının tamamını kapsayan alanı esnek yap */
-    [data-testid="stMetricValue"] {
-        height: auto !important;
-        min-height: 50px !important;
-    }
-    
-    /* Metric içindeki ana metnin (Örn: Fay Tipi) boyutunu küçült ve sığdır */
-    div[data-testid="stMetricValue"] > div {
-        font-size: 1.1rem !important; /* Kibar boyut */
-        white-space: normal !important; /* Kesmeyi engelle, alt satıra geç */
-        line-height: 1.3 !important;
-        overflow-wrap: break-word !important; /* Kelime çok uzunsa böl */
-        font-weight: 500 !important;
-    }
-    
-    /* Metric başlıklarının (Etiketlerin) boyutunu ayarla */
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.9rem !important;
-        margin-bottom: 3px !important;
-    }
-
-    /* Haritanın sol üstündeki etkileşim artifactlerini engellemek için ek CSS */
-    .leaflet-interactive {
-        outline: none !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 st.title("📍 Kapsamlı Fay Hattı & Deprem Sorgulama")
 st.markdown("Haritadan bir nokta seçin veya GPS ile mevcut konumunuzu bulun.")
 
@@ -86,6 +55,7 @@ def get_historical_quakes(lat, lon):
         pass
     return []
 
+# Sadeleştirilmiş Çeviri Fonksiyonu (Örnekler çıkarıldı)
 def translate_slip_type(raw_type):
     if not isinstance(raw_type, str):
         return "Bilinmiyor"
@@ -93,15 +63,15 @@ def translate_slip_type(raw_type):
     raw_lower = raw_type.lower()
     
     if "dextral" in raw_lower or "right-lateral" in raw_lower or "right lateral" in raw_lower:
-        return "Sağ Yönlü Doğrultu Atımlı Fay (Örn: Kuzey Anadolu Fayı karakterinde)"
+        return "Sağ Yönlü Doğrultu Atımlı Fay"
     elif "sinistral" in raw_lower or "left-lateral" in raw_lower or "left lateral" in raw_lower:
-        return "Sol Yönlü Doğrultu Atımlı Fay (Örn: Doğu Anadolu Fayı karakterinde)"
+        return "Sol Yönlü Doğrultu Atımlı Fay"
     elif "strike-slip" in raw_lower or "strike slip" in raw_lower:
         return "Doğrultu Atımlı Fay"
     elif "normal" in raw_lower:
-        return "Normal Atımlı Fay (Düşey Yönlü Hareket)"
+        return "Normal Atımlı Fay"
     elif "reverse" in raw_lower or "thrust" in raw_lower:
-        return "Ters / Bindirme Fayı (Sıkışma Rejimi)"
+        return "Ters / Bindirme Fayı"
     elif "transform" in raw_lower:
         return "Transform Fay"
     else:
@@ -144,16 +114,21 @@ try:
             else:
                 risk_level, risk_color = "Düşük", "🟢"
 
+            # 1. YENİ TASARIM: Risk Derecesi Çizginin Üstünde ve Çok Büyük
+            st.markdown(f"<h2 style='text-align: center; margin-top: 20px;'>{risk_color} Risk Derecesi: {risk_level}</h2>", unsafe_allow_html=True)
+            
             st.divider()
             
-            c1, c2, c3 = st.columns(3)
+            # 2. YENİ TASARIM: Kesilmeyen büyük Markdown metinleri
+            c1, c2 = st.columns(2)
             with c1:
-                st.metric("📏 En Yakın Faya Mesafe", f"{distance_km:.2f} km")
+                st.markdown(f"#### 📏 En Yakın Faya Mesafe")
+                st.markdown(f"## **{distance_km:.2f} km**")
             with c2:
-                # Yazılar CSS sayesinde artık kibar ve kesilmiyor
-                st.metric("⚙️ Fay Tipi (Kinematiği)", fay_tipi)
-            with c3:
-                st.metric("⚠️ Risk Derecesi", f"{risk_color} {risk_level}")
+                st.markdown(f"#### ⚙️ Fay Tipi (Kinematiği)")
+                st.markdown(f"## **{fay_tipi}**")
+            
+            st.write("") # Boşluk
             
             rapor_icerik = f"""AFET BILINCI - RİSK ANALİZ RAPORU
 Tarih: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}
@@ -180,16 +155,14 @@ Risk Seviyesi        : {risk_level}
             historical_quakes = []
             line_coords = []
 
-        # --- TEK HARİTA OLUŞTURUMU (Problemlerin 1 ve 2'nin Çözümü) ---
-        # tiles=None diyerek varsayılan katmanları kapattık
+        # --- TEK HARİTA OLUŞTURUMU ---
         m = folium.Map(location=start_loc, zoom_start=start_zoom, control_scale=True, tiles=None)
         
-        # Manuel olarak harita katmanlarını formatlı isimlerle ekliyoruz
         folium.TileLayer(
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             attr='Esri',
             name='Uydu Görüntüsü',
-            overlay=False # Base map olarak ayarla
+            overlay=False
         ).add_to(m)
         folium.TileLayer(
             tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
@@ -198,24 +171,21 @@ Risk Seviyesi        : {risk_level}
             overlay=False
         ).add_to(m)
         
-        # Varsayılan Sokak Haritası (Kibar isimle en üste)
         folium.TileLayer('OpenStreetMap', name='Sokak Haritası', overlay=False).add_to(m)
 
         # Fay Çizgileri
         folium.GeoJson(
             faults_display, 
             style_function=lambda x: {'color': 'black', 'weight': 1.5, 'opacity': 0.8},
-            interactive=False, # Tıklamayı içinden geçir
+            interactive=False,
             name='Aktif Fay Hatları'
         ).add_to(m)
 
         if st.session_state.current_lat and st.session_state.current_lon:
-            # Risk Çemberleri (interactive=False sayesinde tıklamayı engellemez)
             folium.Circle(location=start_loc, radius=15000, color='yellow', fill=True, fill_opacity=0.1, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=5000, color='orange', fill=True, fill_opacity=0.15, weight=1, interactive=False).add_to(m)
             folium.Circle(location=start_loc, radius=1000, color='red', fill=True, fill_opacity=0.2, weight=1, interactive=False).add_to(m)
             
-            # Depremler
             if historical_quakes:
                 for q in historical_quakes:
                     coords = q['geometry']['coordinates']
@@ -227,8 +197,6 @@ Risk Seviyesi        : {risk_level}
                         interactive=True
                     ).add_to(m)
 
-            # Seçili Konum Markeri (Daha temiz ikon - Sorun 1 Çözümü)
-            # interactive=True kalsın ki üzerine gelince tooltip çıksın
             folium.Marker(
                 start_loc, 
                 tooltip="Seçili Konum", 
@@ -237,16 +205,14 @@ Risk Seviyesi        : {risk_level}
             
             folium.PolyLine(line_coords, color="red", weight=3, opacity=0.8, dash_array='5, 5', interactive=False).add_to(m)
 
-        # Katman Kontrol Menüsü (Formatlı isimlerle sağ üstte)
         folium.LayerControl(position='topright').add_to(m)
 
-        # Haritayı Ekrana Bas (Artifactleri engellemek için etkileşim ayarları)
         map_output = st_folium(
             m, 
             width="100%", 
             height=650, 
             key="main_map",
-            returned_objects=["last_clicked"] # Sadece tıklama verisini iste, dummy objeleri azalt
+            returned_objects=["last_clicked"]
         )
 
         if map_output and map_output.get("last_clicked"):
