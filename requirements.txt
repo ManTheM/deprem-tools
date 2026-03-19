@@ -3,3 +3,5 @@ geopandas
 folium
 streamlit-folium
 shapely
+requests
+streamlit-geolocation
