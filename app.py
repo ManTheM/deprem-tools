@@ -1,67 +1,75 @@
 import streamlit as st
 import geopandas as gpd
-from shapely.ops import nearest_points
 import folium
 from streamlit_folium import st_folium
+from shapely.geometry import Point
+import os
 
-# Sayfa Yapılandırması
-st.set_page_config(page_title="En Yakın Fay Sorgulama", layout="wide")
+# Sayfa Ayarları
+st.set_page_config(page_title="En Yakın Fay Sorgu", layout="wide")
 
-st.title("📍 En Yakın Fay Hattı Sorgulama")
-st.write("Harita üzerinde bir noktaya tıklayarak en yakın aktif fayı ve mesafesini görebilirsiniz.")
+st.title("📍 Türkiye Aktif Fay Sorgulama Sistemi")
+st.info("Harita üzerinde bir noktaya tıklayarak en yakın aktif fay hattını ve mesafesini görebilirsiniz.")
 
-# 1. Veriyi Yükle (Dosya adın: TurkiyeFaults.geojson)
+# Veri Yükleme Fonksiyonu
 @st.cache_data
 def load_data():
-    # Dosyanın script ile aynı klasörde olduğunu varsayıyoruz
-    gdf = gpd.read_file("TurkiyeFaults.geojson")
-    # Mesafe hesaplaması için metrik sisteme (UTM) geçiş yapıyoruz
-    gdf_utm = gdf.to_crs(epsg=5259) # Türkiye için uygun UTM zonu
+    # GitHub'daki dosya adıyla birebir aynı olmalı
+    geojson_file = "TurkiyeFaults.geojson"
+    if not os.path.exists(geojson_file):
+        return None, None
+    
+    gdf = gpd.read_file(geojson_file)
+    # Mesafe hesabı için Türkiye UTM projeksiyonu
+    gdf_utm = gdf.to_crs(epsg=5259) 
     return gdf, gdf_utm
 
 try:
     faults_display, faults_utm = load_data()
 
-    # 2. Haritayı Oluştur
-    m = folium.Map(location=[39.75, 39.50], zoom_start=8) # Erzincan merkezli açılış
+    if faults_display is not None:
+        # Harita (Erzincan Odaklı Başlangıç)
+        m = folium.Map(location=[39.75, 39.50], zoom_start=8)
 
-    # Fay hatlarını siyah ve ince olarak ekle (Senin istediğin gibi)
-    folium.GeoJson(
-        faults_display,
-        style_function=lambda x: {'color': 'black', 'weight': 1.5, 'opacity': 0.7},
-        name="Aktif Faylar"
-    ).add_to(m)
+        # Fay hatlarını siyah ve ince çiziyoruz
+        folium.GeoJson(
+            faults_display,
+            style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.6},
+            tooltip=folium.GeoJsonTooltip(fields=[faults_display.columns[0]], aliases=['Fay Adı:'])
+        ).add_to(m)
 
-    # 3. Harita Etkileşimi
-    map_data = st_folium(m, width=1100, height=600)
+        # Haritayı Göster
+        map_output = st_folium(m, width="100%", height=600)
 
-    if map_data["last_clicked"]:
-        clicked_lat = map_data["last_clicked"]["lat"]
-        clicked_lon = map_data["last_clicked"]["lng"]
-        
-        # Tıklanan noktayı tanımla ve UTM'e dönüştür
-        from shapely.geometry import Point
-        point = Point(clicked_lon, clicked_lat)
-        point_gdf = gpd.GeoSeries([point], crs="EPSG:4326").to_crs(epsg=5259)
-        clicked_point_utm = point_gdf.iloc[0]
+        # Tıklama Yakalama
+        if map_output["last_clicked"]:
+            clicked_lat = map_output["last_clicked"]["lat"]
+            clicked_lon = map_output["last_clicked"]["lng"]
+            
+            # Tıklanan noktayı koordinat sistemine çevir
+            p_utm = gpd.GeoSeries([Point(clicked_lon, clicked_lat)], crs="EPSG:4326").to_crs(epsg=5259).iloc[0]
 
-        # En yakın fayı bul
-        # faults_utm içindeki tüm geometrilerle mesafe hesapla
-        distances = faults_utm.distance(clicked_point_utm)
-        min_dist_idx = distances.idxmin()
-        min_dist_km = distances.min() / 1000 # Metreden Kilometreye
+            # Mesafeleri hesapla
+            distances = faults_utm.distance(p_utm)
+            nearest_idx = distances.idxmin()
+            distance_km = distances.min() / 1000
 
-        # Fay bilgilerini al
-        fay_adi = faults_display.iloc[min_dist_idx].get("NAME", "İsimsiz Fay") # 'NAME' sütun adını kontrol etmelisin
+            # Fay adını belirle (Hangi sütun doluysa onu almaya çalışır)
+            # Eğer dosyanızda özel bir sütun adı varsa burayı 'NAME' yapabiliriz.
+            fay_adi = faults_display.iloc[nearest_idx][0] 
 
-        # Sonucu Göster
-        st.success(f"🔍 **Sonuç:** Seçilen noktaya en yakın fay: **{fay_adi}**")
-        st.info(f"📏 **Mesafe:** Yaklaşık **{min_dist_km:.2f} km**")
-        
-        # Görsel geri bildirim için küçük bir not
-        if min_dist_km < 1:
-            st.warning("⚠️ Dikkat: Fay hattına çok yakın bir konum seçtiniz.")
+            # Görsel Sonuç Paneli
+            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("En Yakın Fay Hattı", str(fay_adi))
+            with col2:
+                st.metric("Kuş Uçuşu Mesafe", f"{distance_km:.2f} km")
+            
+            if distance_km < 1:
+                st.error("⚠️ Seçtiğiniz nokta bir fay hattının çok yakınında (1 km altı)!")
+    else:
+        st.error("GeoJSON dosyası yüklenemedi. Lütfen dosya adını kontrol edin.")
 
 except Exception as e:
-    st.error(f"Veri yüklenirken bir hata oluştu: {e}")
-    st.info("Lütfen 'TurkiyeFaults.geojson' dosyasının uygulama klasöründe olduğundan emin olun.")
+    st.error(f"Sistemsel bir hata oluştu: {e}")
