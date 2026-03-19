@@ -53,8 +53,7 @@ try:
             nearest_idx = distances.idxmin()
             distance_km = distances.min() / 1000
 
-            # 3. HATA DÜZELTME: Geometriyi doğru formatta al
-            # En yakın fayın geometrisini alıyoruz (.geometry kullanarak)
+            # 3. Geometriyi doğru formatta al
             nearest_fault_geom = faults_utm.geometry.iloc[nearest_idx]
             
             # nearest_points fonksiyonuna iki saf 'Geometry' objesi gönderiyoruz
@@ -73,8 +72,11 @@ try:
             
             m2 = folium.Map(location=[clicked_lat, clicked_lon], zoom_start=12)
             
-            # Faylar
-            folium.GeoJson(faults_display, style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity(0.4)'}).add_to(m2)
+            # Faylar (Yazım hatası düzeltildi)
+            folium.GeoJson(
+                faults_display, 
+                style_function=lambda x: {'color': 'black', 'weight': 1.0, 'opacity': 0.4}
+            ).add_to(m2)
             
             # Tıklanan Nokta
             folium.Marker([clicked_lat, clicked_lon], tooltip="Sizin Noktanız").add_to(m2)
