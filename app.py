@@ -14,7 +14,7 @@ from urllib.parse import quote
 # 1. AYARLAR VE STİL (CSS) FONKSİYONLARI
 # ==========================================
 def setup_page():
-    st.set_page_config(page_title="Fay Mesafe Sorgu & Risk Analizi", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="Konuma Bağlı Fay Hattına Uzaklık Sorgulama", layout="wide", initial_sidebar_state="collapsed")
     st.markdown("""
         <style>
         .block-container { padding-top: 1.5rem !important; padding-bottom: 0.5rem !important; }
@@ -162,7 +162,7 @@ def main():
                 selected_image = fault_images.get(fay_tipi)
 
             st.markdown("---")
-            st.markdown(f"<h3 style='text-align: center; margin-top: 0;'>{risk_color} Risk: {risk_level}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; margin-top: 0;'>{risk_color} Tehlike: {risk_level}</h3>", unsafe_allow_html=True)
             st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.9rem;'>📍 {st.session_state.current_address}</p>", unsafe_allow_html=True)
             
             if historical_quakes:
@@ -188,7 +188,7 @@ def main():
             st.link_button("🏢 Toplanma Alanı Sorgula", "https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-acil-toplanma-alani-sorgulama", use_container_width=True)
             
             addr_share = st.session_state.current_address.split(',')[0].strip() or "Bilinmeyen Konum"
-            wp_text = f"{addr_share} konumundaki sorgu sonucum: Faya Mesafe {dist_km:.2f} km, Risk {risk_color} {risk_level}. Sen de riskini öğren: https://deprem-tools-gm2d2cwzijowgjprvwpusd.streamlit.app/"
+            wp_text = f"{addr_share} konumundaki sorgu sonucum: Faya Mesafe {dist_km:.2f} km, Tehlike {risk_color} {risk_level}. Sen de riskini öğren: https://deprem-tools-gm2d2cwzijowgjprvwpusd.streamlit.app/"
             st.link_button("📲 WhatsApp'ta Paylaş", f"https://wa.me/?text={quote(wp_text)}", use_container_width=True)
 
         else:
@@ -199,7 +199,7 @@ def main():
     with col_map:
         m = draw_map(st.session_state.current_lat, st.session_state.current_lon, faults_display, historical_quakes if st.session_state.current_lat else [], line_coords if st.session_state.current_lat else [])
         map_output = st_folium(m, use_container_width=True, height=600, key="main_map", returned_objects=["last_clicked"])
-        st.caption("ℹ️ **Bilgi:** Renkli çemberler (🔴 1 km | 🟠 5 km | 🟡 15 km) risk alanlarını; mor daireler USGS verilerine göre Mw≥5.0 büyüklüğünden büyük depremleri gösterir.")
+        st.caption("ℹ️ **Bilgi:** Renkli çemberler (🔴 1 km | 🟠 5 km | 🟡 15 km) tehlike alanlarını; mor daireler USGS verilerine göre Mw≥5.0 büyüklüğünden büyük depremleri gösterir.")
 
         if map_output and map_output.get("last_clicked"):
             click_tuple = (map_output["last_clicked"]["lat"], map_output["last_clicked"]["lng"])
